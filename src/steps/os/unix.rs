@@ -7,13 +7,14 @@ use std::process::Command;
 use std::{env::var, path::Path};
 
 use crate::command::CommandExt;
+use crate::error;
 use crate::{Step, HOME_DIR};
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::Context;
 use color_eyre::eyre::Result;
 use home;
 use ini::Ini;
-use tracing::debug;
+use tracing::{debug, error};
 
 #[cfg(target_os = "linux")]
 use super::linux::Distribution;
@@ -558,10 +559,18 @@ pub fn run_mise(ctx: &ExecutionContext) -> Result<()> {
 
     ctx.run_type().execute(&mise).arg("upgrade").status_checked()?;
 
-    ctx.run_type()
-        .execute(&mise)
-        .args(["plugins", "update"])
-        .status_checked()
+    let result = ctx.run_type().execute(&mise).args(["plugins", "update"]).status_checked();
+
+    if ctx.config().cleanup() {
+        debug!("Cleaning up mise");
+        if let Err(e) = ctx.run_type().execute(&mise).args(["prune", "-y"]).status_checked()
+        {
+            error!("Removing unused versions of tools failed: {}", e);
+            return Err(eyre!(error::StepFailed))
+        }
+    }
+
+    result
 }
 
 pub fn run_home_manager(ctx: &ExecutionContext) -> Result<()> {
